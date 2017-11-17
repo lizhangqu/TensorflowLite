@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">TensorflowLite</string>
+    <string name="camera_error">This device doesn\'t support Camera2 API.</string>
 </resources>
