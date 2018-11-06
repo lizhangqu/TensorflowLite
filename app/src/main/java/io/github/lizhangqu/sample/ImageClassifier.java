@@ -33,11 +33,12 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.PriorityQueue;
 import org.tensorflow.lite.Interpreter;
 
 /** Classifies images with Tensorflow Lite. */
-public class ImageClassifier {
+class ImageClassifier {
 
   /** Tag for the {@link Log}. */
   private static final String TAG = "TfLiteCameraDemo";
@@ -60,7 +61,7 @@ public class ImageClassifier {
   static final int DIM_IMG_SIZE_Y = 224;
 
   /* Preallocated buffers for storing image data in. */
-  private int[] intValues = new int[DIM_IMG_SIZE_X * DIM_IMG_SIZE_Y];
+  private final int[] intValues = new int[DIM_IMG_SIZE_X * DIM_IMG_SIZE_Y];
 
   /** An instance of the driver class to run model inference with Tensorflow Lite. */
   private Interpreter tflite;
@@ -69,12 +70,12 @@ public class ImageClassifier {
   private List<String> labelList;
 
   /** A ByteBuffer to hold image data, to be feed into Tensorflow Lite as inputs. */
-  private ByteBuffer imgData = null;
+  private ByteBuffer imgData;
 
   /** An array to hold inference results, to be feed into Tensorflow Lite as outputs. */
-  private byte[][] labelProbArray = null;
+  private byte[][] labelProbArray;
 
-  private PriorityQueue<Map.Entry<String, Float>> sortedLabels =
+  private final PriorityQueue<Map.Entry<String, Float>> sortedLabels =
       new PriorityQueue<>(
           RESULTS_TO_SHOW,
           new Comparator<Map.Entry<String, Float>>() {
@@ -121,7 +122,7 @@ public class ImageClassifier {
 
   /** Reads label list from Assets. */
   private List<String> loadLabelList(Activity activity) throws IOException {
-    List<String> labelList = new ArrayList<String>();
+    List<String> labelList = new ArrayList<>();
     BufferedReader reader =
         new BufferedReader(new InputStreamReader(activity.getAssets().open(LABEL_PATH)));
     String line;
@@ -173,12 +174,15 @@ public class ImageClassifier {
         sortedLabels.poll();
       }
     }
-    String textToShow = "";
+
+    StringBuilder textToShow = new StringBuilder();
     final int size = sortedLabels.size();
+    Map.Entry<String, Float> label;
+
     for (int i = 0; i < size; ++i) {
-      Map.Entry<String, Float> label = sortedLabels.poll();
-      textToShow = "\n" + label.getKey() + ":" + Float.toString(label.getValue()) + textToShow;
+      label = sortedLabels.poll();
+      textToShow.insert(0, "\n" + Objects.requireNonNull(label).getKey() + ":" + Float.toString(label.getValue()));
     }
-    return textToShow;
+    return textToShow.toString();
   }
 }

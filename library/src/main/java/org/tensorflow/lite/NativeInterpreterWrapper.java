@@ -15,12 +15,15 @@ limitations under the License.
 
 package org.tensorflow.lite;
 
+import android.support.annotation.Nullable;
+
 import java.lang.reflect.Array;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * A wrapper wraps native interpreter and controls model execution.
@@ -30,6 +33,53 @@ import java.util.Map;
  * NativeInterpreterWrapper} object is no longer needed.
  */
 final class NativeInterpreterWrapper implements AutoCloseable {
+
+  private static final int ERROR_BUFFER_SIZE = 512;
+
+  private long errorHandle;
+
+  private long interpreterHandle;
+
+  private long modelHandle;
+
+  private MappedByteBuffer modelByteBuffer;
+
+  private Map<String, Integer> inputsIndexes;
+
+  private Map<String, Integer> outputsIndexes;
+
+  private static native String[] getInputNames(long interpreterHandle);
+
+  private static native String[] getOutputNames(long interpreterHandle);
+
+  private static native void resizeInput(
+          long interpreterHandle, long errorHandle, int inputIdx, int[] dims);
+
+  private static native void useNNAPI(long interpreterHandle, boolean state);
+
+  private static native long createErrorReporter(int size);
+
+  private static native long createModel(String modelPathOrBuffer, long errorHandle);
+
+  private static native long createModelWithBuffer(MappedByteBuffer modelBuffer, long errorHandle);
+
+  private static native long createInterpreter(long modelHandle);
+
+  private static native long[] run(
+          long interpreterHandle,
+          long errorHandle,
+          Object[] sizes,
+          int[] dtypes,
+          int[] numsOfBytes,
+          Object[] values);
+
+  private static native void delete(long errorHandle, long modelHandle, long interpreterHandle);
+
+  private static native int[] getInputDims(long interpreterHandle, int inputIdx, int numBytes);
+
+  static {
+    TensorFlowLite.init();
+  }
 
   NativeInterpreterWrapper(String modelPath) {
     errorHandle = createErrorReporter(ERROR_BUFFER_SIZE);
@@ -66,22 +116,28 @@ final class NativeInterpreterWrapper implements AutoCloseable {
     if (inputs == null || inputs.length == 0) {
       throw new IllegalArgumentException("Invalid inputs. Inputs should not be null or empty.");
     }
+
     int[] dataTypes = new int[inputs.length];
     Object[] sizes = new Object[inputs.length];
     int[] numsOfBytes = new int[inputs.length];
+    DataType dataType;
+    ByteBuffer buffer;
+    int[] dims;
+
     for (int i = 0; i < inputs.length; ++i) {
-      DataType dataType = dataTypeOf(inputs[i]);
+      dataType = dataTypeOf(inputs[i]);
       dataTypes[i] = dataType.getNumber();
+
       if (dataType == DataType.BYTEBUFFER) {
-        ByteBuffer buffer = (ByteBuffer) inputs[i];
+        buffer = (ByteBuffer) inputs[i];
         if (buffer.order() != ByteOrder.nativeOrder()) {
           throw new IllegalArgumentException(
-              "Invalid ByteBuffer. It shoud use ByteOrder.nativeOrder().");
+              "Invalid ByteBu2ffer. It shoud use ByteOrder.nativeOrder().");
         }
         numsOfBytes[i] = buffer.limit();
         sizes[i] = getInputDims(interpreterHandle, i, numsOfBytes[i]);
       } else if (isNonEmptyArray(inputs[i])) {
-        int[] dims = shapeOf(inputs[i]);
+        dims = shapeOf(inputs[i]);
         sizes[i] = dims;
         numsOfBytes[i] = dataType.elemByteSize() * numElements(dims);
       } else {
@@ -91,15 +147,19 @@ final class NativeInterpreterWrapper implements AutoCloseable {
                 i, inputs.length));
       }
     }
+
     long[] outputsHandles =
         run(interpreterHandle, errorHandle, sizes, dataTypes, numsOfBytes, inputs);
+
     if (outputsHandles == null || outputsHandles.length == 0) {
       throw new IllegalStateException("Interpreter has no outputs.");
     }
+
     Tensor[] outputs = new Tensor[outputsHandles.length];
     for (int i = 0; i < outputsHandles.length; ++i) {
       outputs[i] = Tensor.fromHandle(outputsHandles[i]);
     }
+
     return outputs;
   }
 
@@ -123,6 +183,7 @@ final class NativeInterpreterWrapper implements AutoCloseable {
         }
       }
     }
+
     if (inputsIndexes.containsKey(name)) {
       return inputsIndexes.get(name);
     } else {
@@ -138,12 +199,14 @@ final class NativeInterpreterWrapper implements AutoCloseable {
     if (outputsIndexes == null) {
       String[] names = getOutputNames(interpreterHandle);
       outputsIndexes = new HashMap<>();
+
       if (names != null) {
         for (int i = 0; i < names.length; ++i) {
           outputsIndexes.put(names[i], i);
         }
       }
     }
+
     if (outputsIndexes.containsKey(name)) {
       return outputsIndexes.get(name);
     } else {
@@ -154,18 +217,20 @@ final class NativeInterpreterWrapper implements AutoCloseable {
     }
   }
 
-  static int numElements(int[] shape) {
+  private static int numElements(int[] shape) {
     if (shape == null) {
       return 0;
     }
+
     int n = 1;
     for (int i = 0; i < shape.length; i++) {
       n *= shape[i];
     }
+
     return n;
   }
 
-  static boolean isNonEmptyArray(Object o) {
+  private static boolean isNonEmptyArray(Object o) {
     return (o != null && o.getClass().isArray() && Array.getLength(o) != 0);
   }
 
@@ -173,22 +238,30 @@ final class NativeInterpreterWrapper implements AutoCloseable {
   static DataType dataTypeOf(Object o) {
     if (o != null) {
       Class<?> c = o.getClass();
-      while (c.isArray()) {
+      while (c != null && c.isArray()) {
         c = c.getComponentType();
       }
-      if (float.class.equals(c)) {
-        return DataType.FLOAT32;
-      } else if (int.class.equals(c)) {
-        return DataType.INT32;
-      } else if (byte.class.equals(c)) {
-        return DataType.UINT8;
-      } else if (long.class.equals(c)) {
-        return DataType.INT64;
-      } else if (ByteBuffer.class.isInstance(o)) {
-        return DataType.BYTEBUFFER;
-      }
+
+      DataType x = getClassDataType(o, c);
+      if (x != null) return x;
     }
-    throw new IllegalArgumentException("cannot resolve DataType of " + o.getClass().getName());
+    throw new IllegalArgumentException("cannot resolve DataType of " + Objects.requireNonNull(o).getClass().getName());
+  }
+
+  @Nullable
+  private static DataType getClassDataType(Object o, Class<?> c) {
+    if (float.class.equals(c)) {
+      return DataType.FLOAT32;
+    } else if (int.class.equals(c)) {
+      return DataType.INT32;
+    } else if (byte.class.equals(c)) {
+      return DataType.UINT8;
+    } else if (long.class.equals(c)) {
+      return DataType.INT64;
+    } else if (ByteBuffer.class.isInstance(o)) {
+      return DataType.BYTEBUFFER;
+    }
+    return null;
   }
 
   /** Returns the shape of an object as an int array. */
@@ -199,7 +272,7 @@ final class NativeInterpreterWrapper implements AutoCloseable {
     return dimensions;
   }
 
-  static int numDimensions(Object o) {
+  private static int numDimensions(Object o) {
     if (o == null || !o.getClass().isArray()) {
       return 0;
     }
@@ -209,7 +282,7 @@ final class NativeInterpreterWrapper implements AutoCloseable {
     return 1 + numDimensions(Array.get(o, 0));
   }
 
-  static void fillShape(Object o, int dim, int[] shape) {
+  private static void fillShape(Object o, int dim, int[] shape) {
     if (shape == null || dim == shape.length) {
       return;
     }
@@ -223,54 +296,5 @@ final class NativeInterpreterWrapper implements AutoCloseable {
     for (int i = 0; i < len; ++i) {
       fillShape(Array.get(o, i), dim + 1, shape);
     }
-  }
-
-  private static final int ERROR_BUFFER_SIZE = 512;
-
-  private long errorHandle;
-
-  private long interpreterHandle;
-
-  private long modelHandle;
-
-  private int inputSize;
-
-  private MappedByteBuffer modelByteBuffer;
-
-  private Map<String, Integer> inputsIndexes;
-
-  private Map<String, Integer> outputsIndexes;
-
-  private static native String[] getInputNames(long interpreterHandle);
-
-  private static native String[] getOutputNames(long interpreterHandle);
-
-  private static native void resizeInput(
-      long interpreterHandle, long errorHandle, int inputIdx, int[] dims);
-
-  private static native void useNNAPI(long interpreterHandle, boolean state);
-
-  private static native long createErrorReporter(int size);
-
-  private static native long createModel(String modelPathOrBuffer, long errorHandle);
-
-  private static native long createModelWithBuffer(MappedByteBuffer modelBuffer, long errorHandle);
-
-  private static native long createInterpreter(long modelHandle);
-
-  private static native long[] run(
-      long interpreterHandle,
-      long errorHandle,
-      Object[] sizes,
-      int[] dtypes,
-      int[] numsOfBytes,
-      Object[] values);
-
-  private static native void delete(long errorHandle, long modelHandle, long interpreterHandle);
-
-  private static native int[] getInputDims(long interpreterHandle, int inputIdx, int numBytes);
-
-  static {
-    TensorFlowLite.init();
   }
 }

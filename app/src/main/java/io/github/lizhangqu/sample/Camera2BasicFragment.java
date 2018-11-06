@@ -15,6 +15,7 @@ limitations under the License.
 
 package io.github.lizhangqu.sample;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
@@ -46,6 +47,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.support.annotation.NonNull;
 import android.support.v13.app.FragmentCompat;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.util.Log;
 import android.util.Size;
@@ -62,6 +64,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
@@ -113,7 +116,8 @@ public class Camera2BasicFragment extends Fragment
         }
 
         @Override
-        public void onSurfaceTextureUpdated(SurfaceTexture texture) {}
+        public void onSurfaceTextureUpdated(SurfaceTexture texture) {
+        }
       };
 
   /** ID of the current {@link CameraDevice}. */
@@ -178,23 +182,25 @@ public class Camera2BasicFragment extends Fragment
   private CaptureRequest previewRequest;
 
   /** A {@link Semaphore} to prevent the app from exiting before closing the camera. */
-  private Semaphore cameraOpenCloseLock = new Semaphore(1);
+  private final Semaphore cameraOpenCloseLock = new Semaphore(1);
 
   /** A {@link CameraCaptureSession.CaptureCallback} that handles events related to capture. */
-  private CameraCaptureSession.CaptureCallback captureCallback =
+  private final CameraCaptureSession.CaptureCallback captureCallback =
       new CameraCaptureSession.CaptureCallback() {
 
         @Override
         public void onCaptureProgressed(
             @NonNull CameraCaptureSession session,
             @NonNull CaptureRequest request,
-            @NonNull CaptureResult partialResult) {}
+            @NonNull CaptureResult partialResult) {
+        }
 
         @Override
         public void onCaptureCompleted(
             @NonNull CameraCaptureSession session,
             @NonNull CaptureRequest request,
-            @NonNull TotalCaptureResult result) {}
+            @NonNull TotalCaptureResult result) {
+        }
       };
 
   /**
@@ -287,8 +293,8 @@ public class Camera2BasicFragment extends Fragment
   /** Connect the buttons to their event handler. */
   @Override
   public void onViewCreated(final View view, Bundle savedInstanceState) {
-    textureView = (AutoFitTextureView) view.findViewById(R.id.texture);
-    textView = (TextView) view.findViewById(R.id.text);
+    textureView = view.findViewById(R.id.texture);
+    textView = view.findViewById(R.id.text);
   }
 
   /** Load the model and labels. */
@@ -342,7 +348,8 @@ public class Camera2BasicFragment extends Fragment
     Activity activity = getActivity();
     CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
     try {
-      for (String cameraId : manager.getCameraIdList()) {
+      String[] idList = Objects.requireNonNull(manager).getCameraIdList();
+      for (String cameraId : idList) {
         CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
 
         // We don't use a front facing camera in this sample.
@@ -475,7 +482,17 @@ public class Camera2BasicFragment extends Fragment
       if (!cameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
         throw new RuntimeException("Time out waiting to lock camera opening.");
       }
-      manager.openCamera(cameraId, stateCallback, backgroundHandler);
+      if (ActivityCompat.checkSelfPermission(this.getContext(), Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+        // TODO: Consider calling
+        //    ActivityCompat#requestPermissions
+        // here to request the missing permissions, and then overriding
+        //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+        //                                          int[] grantResults)
+        // to handle the case where the user grants the permission. See the documentation
+        // for ActivityCompat#requestPermissions for more details.
+        return;
+      }
+      Objects.requireNonNull(manager).openCamera(cameraId, stateCallback, backgroundHandler);
     } catch (CameraAccessException e) {
       e.printStackTrace();
     } catch (InterruptedException e) {
@@ -491,12 +508,6 @@ public class Camera2BasicFragment extends Fragment
       }
     }
     return true;
-  }
-
-  @Override
-  public void onRequestPermissionsResult(
-      int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-    super.onRequestPermissionsResult(requestCode, permissions, grantResults);
   }
 
   /** Closes the current {@link CameraDevice}. */
@@ -549,7 +560,7 @@ public class Camera2BasicFragment extends Fragment
   }
 
   /** Takes photos and classify them periodically. */
-  private Runnable periodicClassify =
+  private final Runnable periodicClassify =
       new Runnable() {
         @Override
         public void run() {
@@ -580,7 +591,7 @@ public class Camera2BasicFragment extends Fragment
 
       // Here, we create a CameraCaptureSession for camera preview.
       cameraDevice.createCaptureSession(
-          Arrays.asList(surface),
+          Collections.singletonList(surface),
           new CameraCaptureSession.StateCallback() {
 
             @Override
@@ -681,7 +692,7 @@ public class Camera2BasicFragment extends Fragment
 
     private static final String ARG_MESSAGE = "message";
 
-    public static ErrorDialog newInstance(String message) {
+    static ErrorDialog newInstance(String message) {
       ErrorDialog dialog = new ErrorDialog();
       Bundle args = new Bundle();
       args.putString(ARG_MESSAGE, message);

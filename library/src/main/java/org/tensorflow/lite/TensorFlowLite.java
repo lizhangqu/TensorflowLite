@@ -16,7 +16,7 @@ limitations under the License.
 package org.tensorflow.lite;
 
 /** Static utility methods loading the TensorFlowLite runtime. */
-public final class TensorFlowLite {
+final class TensorFlowLite {
 
   private static final String LIBNAME = "tensorflowlite_jni";
 
@@ -28,13 +28,11 @@ public final class TensorFlowLite {
   /**
    * Load the TensorFlowLite runtime C library.
    */
-  static boolean init() {
+  static void init() {
     try {
       System.loadLibrary(LIBNAME);
-      return true;
     } catch (UnsatisfiedLinkError e) {
       System.err.println("TensorFlowLite: failed to load native library: " + e.getMessage());
-      return false;
     }
   }
 

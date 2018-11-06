@@ -25,6 +25,25 @@ import java.util.Arrays;
  */
 final class Tensor {
 
+  private final long nativeHandle;
+  private final DataType dtype;
+  private final int[] shapeCopy;
+
+  private Tensor(long nativeHandle) {
+    this.nativeHandle = nativeHandle;
+    this.dtype = DataType.fromNumber(dtype(nativeHandle));
+    this.shapeCopy = shape(nativeHandle);
+  }
+
+  private static native int dtype(long handle);
+
+  private static native int[] shape(long handle);
+
+  private static native void readMultiDimensionalArray(long handle, Object value);
+
+  static {
+    TensorFlowLite.init();
+  }
   static Tensor fromHandle(long nativeHandle) {
     return new Tensor(nativeHandle);
   }
@@ -47,25 +66,5 @@ final class Tensor {
     }
     readMultiDimensionalArray(nativeHandle, dst);
     return dst;
-  }
-
-  final long nativeHandle;
-  final DataType dtype;
-  final int[] shapeCopy;
-
-  private Tensor(long nativeHandle) {
-    this.nativeHandle = nativeHandle;
-    this.dtype = DataType.fromNumber(dtype(nativeHandle));
-    this.shapeCopy = shape(nativeHandle);
-  }
-
-  private static native int dtype(long handle);
-
-  private static native int[] shape(long handle);
-
-  private static native void readMultiDimensionalArray(long handle, Object value);
-
-  static {
-    TensorFlowLite.init();
   }
 }
